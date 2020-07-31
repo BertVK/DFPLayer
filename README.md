@@ -1,2 +1,2 @@
-# DFPLayer
+# DFPlayer
 DFPlayer tests
