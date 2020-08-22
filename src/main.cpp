@@ -21,7 +21,7 @@ PINOUT
 #define SCL_PIN 22
 #define BUSY_PIN 23
 
-#define DEBUG true
+#define DEBUG false
 
 DFRobotDFPlayerMini dfPlayer;
 uint8_t volume;
@@ -297,86 +297,8 @@ void loop()
         //debouncing
         delay(200);
 
-        uint8_t a, b;
-        // uint8_t captureA, captureB;
-        // uint8_t currentA, currentB;
-
-        //Check which port triggered the interrupt
-        mcp0.interruptedBy(a, b);
-        if (a != 0 || b != 0)
-        {
-            if (DEBUG)
-            {
-                Serial.print("mpc0 a : ");
-                Serial.print(a, BIN);
-                Serial.print(" - b : ");
-                Serial.println(b, BIN);
-            }
-
-            // mcp0.clearInterrupts(captureA, captureB);
-            // Serial.print("mpc0 captureA : ");
-            // Serial.print(captureA, BIN);
-            // Serial.print(" - captureB : ");
-            // Serial.println(captureB, BIN);
-
-            // currentA = mcp0.readPort(MCP23017Port::A);
-            // currentB = mcp0.readPort(MCP23017Port::B);
-            // Serial.print("mpc0 currentA : ");
-            // Serial.print(currentA, BIN);
-            // Serial.print(" - currentB : ");
-            // Serial.println(currentB, BIN);
-
-            // mcp0.writeRegister(MCP23017Register::GPIO_A, 0x00);
-            // mcp0.writeRegister(MCP23017Register::GPIO_B, 0x00);
-        }
-
-        mcp1.interruptedBy(a, b);
-        if (a != 0 || b != 0)
-        {
-            if (DEBUG)
-            {
-                Serial.print("mpc1 a : ");
-                Serial.print(a);
-                Serial.print(" - b : ");
-                Serial.println(b);
-            }
-            // mcp1.clearInterrupts(captureA, captureB);
-            // Serial.print("mpc1 captureA : ");
-            // Serial.print(captureA);
-            // Serial.print(" - captureB : ");
-            // Serial.println(captureB);
-            // currentA = mcp1.readPort(MCP23017Port::A);
-            // currentB = mcp1.readPort(MCP23017Port::B);
-            // Serial.print("mpc1 currentA : ");
-            // Serial.print(currentA);
-            // Serial.print(" - currentB : ");
-            // Serial.println(currentB);
-        }
-
         digitalWrite(BUILTIN_LED, HIGH);
         interrupted = false;
-    }
-    if (timer < millis())
-    {
-        if (DEBUG)
-        {
-            //Show the songs on the queue
-            if (playlist.size() > 0)
-            {
-                Serial.print("Queue : ");
-                for (int i = 0; i <= playlist.size(); i++)
-                {
-                    Serial.print(playlist[i]);
-                    Serial.print(", ");
-                }
-                Serial.println();
-            }
-            // Serial.print("DFPlayer State : ");
-            // Serial.print(dfPlayer.readState());
-            // Serial.print(" - DFPlayer read : ");
-            // Serial.println(dfPlayer.read());
-        }
-        timer = millis() + 1000;
     }
     playAudio();
 }
