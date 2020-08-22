@@ -6,6 +6,7 @@ PINOUT
 19 : interrupt line
 21 : SDA
 22 : SCL
+23 : busy signal from DFPlayer
 */
 
 #include <Arduino.h>
@@ -18,10 +19,13 @@ PINOUT
 #define INT_PIN 19
 #define SDA_PIN 21
 #define SCL_PIN 22
+#define BUSY_PIN 23
+
+#define DEBUG true
 
 DFRobotDFPlayerMini dfPlayer;
 uint8_t volume;
-bool mcpAvailable[8] ={ false, false, false, false, false, false, false, false };
+bool mcpAvailable[8] = {false, false, false, false, false, false, false, false};
 MCP23017 mcp0 = MCP23017(0x20);
 MCP23017 mcp1 = MCP23017(0x21);
 MCP23017 mcp2 = MCP23017(0x22);
@@ -35,27 +39,33 @@ CircularBuffer<byte, 100> playlist;
 uint8_t lastButtonPressed;
 int timer;
 
-void userInput() {
+void userInput()
+{
     interrupted = true;
 }
 
-void findMcpDevices() {
+void findMcpDevices()
+{
     byte error, address;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8; i++)
+    {
         address = 0x20 + i;
         Wire.beginTransmission(address);
         Wire.write((byte)0x0a);
         error = Wire.endTransmission();
-        if (error == 0) {
+        if (error == 0)
+        {
             mcpAvailable[i] = true;
         }
-        else {
+        else
+        {
             mcpAvailable[i] = false;
         }
     }
 }
 
-void initMcp(MCP23017 thisMcp) {
+void initMcp(MCP23017 thisMcp)
+{
     thisMcp.init();
     //Set both ports as input
     thisMcp.portMode(MCP23017Port::A, 0b11111111);
@@ -75,45 +85,73 @@ void initMcp(MCP23017 thisMcp) {
     thisMcp.clearInterrupts();
 }
 
-void initMcpDevices() {
-    if (mcpAvailable[0]) initMcp(mcp0);
-    if (mcpAvailable[1]) initMcp(mcp1);
-    if (mcpAvailable[2]) initMcp(mcp2);
-    if (mcpAvailable[3]) initMcp(mcp3);
-    if (mcpAvailable[4]) initMcp(mcp4);
-    if (mcpAvailable[5]) initMcp(mcp5);
-    if (mcpAvailable[6]) initMcp(mcp6);
-    if (mcpAvailable[7]) initMcp(mcp7);
+void initMcpDevices()
+{
+    if (mcpAvailable[0])
+        initMcp(mcp0);
+    if (mcpAvailable[1])
+        initMcp(mcp1);
+    if (mcpAvailable[2])
+        initMcp(mcp2);
+    if (mcpAvailable[3])
+        initMcp(mcp3);
+    if (mcpAvailable[4])
+        initMcp(mcp4);
+    if (mcpAvailable[5])
+        initMcp(mcp5);
+    if (mcpAvailable[6])
+        initMcp(mcp6);
+    if (mcpAvailable[7])
+        initMcp(mcp7);
 }
 
-void clearMcpInterupts() {
-    if (mcpAvailable[0]) mcp0.clearInterrupts();
-    if (mcpAvailable[1]) mcp1.clearInterrupts();
-    if (mcpAvailable[2]) mcp2.clearInterrupts();
-    if (mcpAvailable[3]) mcp3.clearInterrupts();
-    if (mcpAvailable[4]) mcp4.clearInterrupts();
-    if (mcpAvailable[5]) mcp5.clearInterrupts();
-    if (mcpAvailable[6]) mcp6.clearInterrupts();
-    if (mcpAvailable[7]) mcp7.clearInterrupts();
+void clearMcpInterupts()
+{
+    if (mcpAvailable[0])
+        mcp0.clearInterrupts();
+    if (mcpAvailable[1])
+        mcp1.clearInterrupts();
+    if (mcpAvailable[2])
+        mcp2.clearInterrupts();
+    if (mcpAvailable[3])
+        mcp3.clearInterrupts();
+    if (mcpAvailable[4])
+        mcp4.clearInterrupts();
+    if (mcpAvailable[5])
+        mcp5.clearInterrupts();
+    if (mcpAvailable[6])
+        mcp6.clearInterrupts();
+    if (mcpAvailable[7])
+        mcp7.clearInterrupts();
 }
 
 //Check the buffer and queue the number of the button in the playlist
-void queueButtons(uint8_t buffer, bool isBufferA, uint8_t chipNumber) {
+void queueButtons(uint8_t buffer, bool isBufferA, uint8_t chipNumber)
+{
     uint8_t buttonNumber = 0;
     //detect the first bit
-    for (int position = 0; position < 8; position++) {
-        if (1 == ((buffer >> position) & 1)) {
+    for (int position = 0; position < 8; position++)
+    {
+        if (1 == ((buffer >> position) & 1))
+        {
             //Calculate the button number
             buttonNumber = (isBufferA) ? (chipNumber * 16) + (position + 1) : (chipNumber * 16) + 8 + (position + 1);
-            Serial.print("Detected button nr ");
-            Serial.print(buttonNumber);
-            Serial.print(" - Last button nr ");
-            Serial.println(lastButtonPressed);
+            if (DEBUG)
+            {
+                Serial.print("Detected button nr ");
+                Serial.print(buttonNumber);
+                Serial.print(" - Last button nr ");
+                Serial.println(lastButtonPressed);
+            }
             //We do not want twice the same button in the queue. It has to finish playing before we can play it again.
-            if (lastButtonPressed != buttonNumber) {
+            if (lastButtonPressed != buttonNumber)
+            {
                 //Add the button to the queue
-                Serial.print("Added button nr ");
-                Serial.println(buttonNumber);
+                if (DEBUG)
+                {
+                    Serial.print("Added button nr ");
+                    Serial.println(buttonNumber);
+                }
                 playlist.push(buttonNumber);
             }
             lastButtonPressed = buttonNumber;
@@ -121,55 +159,91 @@ void queueButtons(uint8_t buffer, bool isBufferA, uint8_t chipNumber) {
     }
 }
 
-void getButtonsPressed() {
+void getButtonsPressed()
+{
     uint8_t a, b;
     uint8_t chipCounter = 0;
-    for (int i = 0; i < 8; i++) {
-        if (mcpAvailable[i]) {
-            if (i == 0) mcp0.interruptedBy(a, b);
-            if (i == 1) mcp1.interruptedBy(a, b);
-            if (i == 2) mcp2.interruptedBy(a, b);
-            if (i == 3) mcp3.interruptedBy(a, b);
-            if (i == 4) mcp4.interruptedBy(a, b);
-            if (i == 5) mcp5.interruptedBy(a, b);
-            if (i == 6) mcp6.interruptedBy(a, b);
-            if (i == 7) mcp7.interruptedBy(a, b);
+    for (int i = 0; i < 8; i++)
+    {
+        if (mcpAvailable[i])
+        {
+            if (i == 0)
+                mcp0.interruptedBy(a, b);
+            if (i == 1)
+                mcp1.interruptedBy(a, b);
+            if (i == 2)
+                mcp2.interruptedBy(a, b);
+            if (i == 3)
+                mcp3.interruptedBy(a, b);
+            if (i == 4)
+                mcp4.interruptedBy(a, b);
+            if (i == 5)
+                mcp5.interruptedBy(a, b);
+            if (i == 6)
+                mcp6.interruptedBy(a, b);
+            if (i == 7)
+                mcp7.interruptedBy(a, b);
             //The interrupt of this mcp has been triggered, so get the number of the button
-            if (a != 0) queueButtons(a, true, chipCounter);
-            if (b != 0) queueButtons(a, false, chipCounter);
+            if (a != 0)
+                queueButtons(a, true, chipCounter);
+            if (b != 0)
+                queueButtons(a, false, chipCounter);
             chipCounter++;
         }
     }
 }
 
-void playAudio() {
-    if (!playlist.isEmpty()) {
+bool isPlayerBusy()
+{
+    if (digitalRead(BUSY_PIN))
+        return true;
+    return false;
+}
+
+void playAudio()
+{
+    if (!playlist.isEmpty())
+    {
         //There's a request on the queue, play it when the player is not playing
-        if (dfPlayer.read() != 513) {
+        if (isPlayerBusy())
+        {
             uint8_t songNr = playlist.pop();
             dfPlayer.play(songNr);
-            Serial.print("Playing song Nr ");
-            Serial.println(songNr);
+            delay(100);
+            if (DEBUG)
+            {
+                Serial.print("Playing song Nr ");
+                Serial.println(songNr);
+            }
         }
     }
-    else {
+    else
+    {
         //When last audio is played, we can play the same one again
         lastButtonPressed = 0;
     }
 }
 
-void setup() {
+void setup()
+{
     //Init variables
     volume = 20;
     interrupted = false;
     timer = millis();
     lastButtonPressed = 0;
 
-    Serial.begin(115200);
-    while (!Serial) {
+    if (DEBUG)
+    {
+        Serial.begin(115200);
+        delay(50);
+        while (!Serial)
+        {
+        }
     }
     Serial2.begin(9600);
-    while (!Serial2) {
+    delay(50);
+    while (!Serial2)
+    {
     }
 
     Wire.begin(SDA_PIN, SCL_PIN, 100000L);
@@ -178,30 +252,45 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(INT_PIN), userInput, RISING);
 
     pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(BUSY_PIN, INPUT);
     digitalWrite(BUILTIN_LED, HIGH);
 
-    if (!dfPlayer.begin(Serial2)) {
-        Serial.println(F("Unable to begin"));
-        Serial.println(F("1. Please rechek the connection"));
-        Serial.println(F("2. Please insert the SD card"));
-        while (true) {
-            //Show a red LED. TODO : add status LED
+    //Give the DFPlayer a little time to initialize
+    delay(1000);
+    if (!dfPlayer.begin(Serial2))
+    {
+        if (DEBUG)
+        {
+            Serial.println(F("Unable to begin"));
+            Serial.println(F("1. Please rechek the connection"));
+            Serial.println(F("2. Please insert the SD card"));
+        }
+        while (true)
+        {
+            digitalWrite(BUILTIN_LED, LOW);
         }
     }
-    Serial.println(F("DFPlayer Mini is Online"));
+    if (DEBUG)
+        Serial.println(F("DFPlayer Mini is Online"));
     dfPlayer.volume(volume);
-    Serial.print("Volume set to ");
-    Serial.println(volume);
+    if (DEBUG)
+    {
+        Serial.print("Volume set to ");
+        Serial.println(volume);
 
-    Serial.println("Setup done");
+        Serial.println("Setup done");
+    }
 }
 
-void loop() {
-    if (!interrupted) {
+void loop()
+{
+    if (!interrupted)
+    {
         // just to be sure that arduino and mcp are in the "same state" regarding interrupts
         clearMcpInterupts();
     }
-    else {
+    else
+    {
         digitalWrite(BUILTIN_LED, LOW);
 
         getButtonsPressed();
@@ -214,11 +303,15 @@ void loop() {
 
         //Check which port triggered the interrupt
         mcp0.interruptedBy(a, b);
-        if (a != 0 || b != 0) {
-            Serial.print("mpc0 a : ");
-            Serial.print(a, BIN);
-            Serial.print(" - b : ");
-            Serial.println(b, BIN);
+        if (a != 0 || b != 0)
+        {
+            if (DEBUG)
+            {
+                Serial.print("mpc0 a : ");
+                Serial.print(a, BIN);
+                Serial.print(" - b : ");
+                Serial.println(b, BIN);
+            }
 
             // mcp0.clearInterrupts(captureA, captureB);
             // Serial.print("mpc0 captureA : ");
@@ -238,11 +331,15 @@ void loop() {
         }
 
         mcp1.interruptedBy(a, b);
-        if (a != 0 || b != 0) {
-            Serial.print("mpc1 a : ");
-            Serial.print(a);
-            Serial.print(" - b : ");
-            Serial.println(b);
+        if (a != 0 || b != 0)
+        {
+            if (DEBUG)
+            {
+                Serial.print("mpc1 a : ");
+                Serial.print(a);
+                Serial.print(" - b : ");
+                Serial.println(b);
+            }
             // mcp1.clearInterrupts(captureA, captureB);
             // Serial.print("mpc1 captureA : ");
             // Serial.print(captureA);
@@ -259,18 +356,26 @@ void loop() {
         digitalWrite(BUILTIN_LED, HIGH);
         interrupted = false;
     }
-    if (timer < millis()) {
-        //Show the songs on the queue
-        Serial.print("Queue : ");
-        for (int i = 0; i <= playlist.size(); i++) {
-            Serial.print(playlist[i]);
-            Serial.print(", ");
+    if (timer < millis())
+    {
+        if (DEBUG)
+        {
+            //Show the songs on the queue
+            if (playlist.size() > 0)
+            {
+                Serial.print("Queue : ");
+                for (int i = 0; i <= playlist.size(); i++)
+                {
+                    Serial.print(playlist[i]);
+                    Serial.print(", ");
+                }
+                Serial.println();
+            }
+            // Serial.print("DFPlayer State : ");
+            // Serial.print(dfPlayer.readState());
+            // Serial.print(" - DFPlayer read : ");
+            // Serial.println(dfPlayer.read());
         }
-        Serial.println();
-        Serial.print("DFPlayer State : ");
-        Serial.print(dfPlayer.readState());
-        Serial.print(" - DFPlayer read : ");
-        Serial.println(dfPlayer.read());
         timer = millis() + 1000;
     }
     playAudio();
