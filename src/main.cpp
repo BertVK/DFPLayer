@@ -3,7 +3,7 @@ PINOUT
  5 : internal LED
 17 : Serial2 Tx
 16 : Serial2 Rx
-19 : interrupt line
+15 : interrupt line
 21 : SDA
 22 : SCL
 23 : busy signal from DFPlayer
@@ -16,12 +16,12 @@ PINOUT
 #include <CircularBuffer.h> //https://github.com/rlogiacco/CircularBuffer
 
 // define pins
-#define INT_PIN 19
-#define SDA_PIN 21
-#define SCL_PIN 22
-#define BUSY_PIN 23
+#define INT_PIN GPIO_NUM_15
+#define SDA_PIN GPIO_NUM_21
+#define SCL_PIN GPIO_NUM_22
+#define BUSY_PIN GPIO_NUM_23
 
-#define DEBUG false
+#define DEBUG true
 
 DFRobotDFPlayerMini dfPlayer;
 uint8_t volume;
@@ -34,10 +34,11 @@ MCP23017 mcp4 = MCP23017(0x24);
 MCP23017 mcp5 = MCP23017(0x25);
 MCP23017 mcp6 = MCP23017(0x26);
 MCP23017 mcp7 = MCP23017(0x27);
-volatile bool interrupted = false;
+bool interrupted = false;
 CircularBuffer<byte, 100> playlist;
 uint8_t lastButtonPressed;
-int timer;
+unsigned long timer = 0;
+const unsigned long timeout = 10000;
 
 void userInput()
 {
@@ -215,6 +216,8 @@ void playAudio()
                 Serial.print("Playing song Nr ");
                 Serial.println(songNr);
             }
+            //keep track of when we started playing the last audio file.
+            timer = millis();
         }
     }
     else
@@ -226,34 +229,27 @@ void playAudio()
 
 void setup()
 {
-    //Init variables
-    volume = 20;
-    interrupted = false;
     timer = millis();
-    lastButtonPressed = 0;
+    volume = 10;
+    //Set power parameters
+    setCpuFrequencyMhz(80);
 
     if (DEBUG)
     {
         Serial.begin(115200);
-        delay(50);
-        while (!Serial)
-        {
-        }
     }
-    Serial2.begin(9600);
-    delay(50);
-    while (!Serial2)
-    {
-    }
+    //Init variables
+    interrupted = false;
+    lastButtonPressed = 0;
+    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(BUSY_PIN, INPUT);
+    digitalWrite(BUILTIN_LED, HIGH);
 
+    Serial2.begin(9600);
     Wire.begin(SDA_PIN, SCL_PIN, 100000L);
     findMcpDevices();
     initMcpDevices();
     attachInterrupt(digitalPinToInterrupt(INT_PIN), userInput, RISING);
-
-    pinMode(LED_BUILTIN, OUTPUT);
-    pinMode(BUSY_PIN, INPUT);
-    digitalWrite(BUILTIN_LED, HIGH);
 
     //Give the DFPlayer a little time to initialize
     delay(1000);
@@ -273,11 +269,15 @@ void setup()
     if (DEBUG)
         Serial.println(F("DFPlayer Mini is Online"));
     dfPlayer.volume(volume);
+
     if (DEBUG)
     {
         Serial.print("Volume set to ");
         Serial.println(volume);
+    }
 
+    if (DEBUG)
+    {
         Serial.println("Setup done");
     }
 }
