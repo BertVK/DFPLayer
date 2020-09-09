@@ -14,6 +14,9 @@ PINOUT
 #include <Wire.h>
 #include <MCP23017.h>
 #include <CircularBuffer.h> //https://github.com/rlogiacco/CircularBuffer
+#include <WiFi.h>
+#include <WebServer.h>
+#include <AutoConnect.h>
 
 // define pins
 #define INT_PIN GPIO_NUM_15
@@ -21,10 +24,20 @@ PINOUT
 #define SCL_PIN GPIO_NUM_22
 #define BUSY_PIN GPIO_NUM_23
 
-#define DEBUG true
+#define DEBUG false
 
+#define KEY "dUhzSZ0OiI4YBAEPamqC3t"
+#define EVENT_NAME "doggybutton"
+String buttonsNames[] = {
+    "ik heb honger",
+    "mag ik buiten"};
+HTTPClient http;
+
+//DFPlayer related objects
 DFRobotDFPlayerMini dfPlayer;
-uint8_t volume;
+RTC_DATA_ATTR uint8_t volume;
+
+//MCP and button related objects
 bool mcpAvailable[8] = {false, false, false, false, false, false, false, false};
 MCP23017 mcp0 = MCP23017(0x20);
 MCP23017 mcp1 = MCP23017(0x21);
@@ -37,8 +50,10 @@ MCP23017 mcp7 = MCP23017(0x27);
 bool interrupted = false;
 CircularBuffer<byte, 100> playlist;
 uint8_t lastButtonPressed;
-unsigned long timer = 0;
-const unsigned long timeout = 10000;
+
+//WiFi objects
+WebServer server;
+AutoConnect portal(server);
 
 void userInput()
 {
@@ -197,8 +212,47 @@ void getButtonsPressed()
 bool isPlayerBusy()
 {
     if (digitalRead(BUSY_PIN))
-        return true;
-    return false;
+        return false;
+    return true;
+}
+
+String urlencode(String str)
+{
+    String encodedString = "";
+    char c;
+    char code0;
+    char code1;
+    for (int i = 0; i < str.length(); i++)
+    {
+        c = str.charAt(i);
+        if (c == ' ')
+        {
+            encodedString += '+';
+        }
+        else if (isalnum(c))
+        {
+            encodedString += c;
+        }
+        else
+        {
+            code1 = (c & 0xf) + '0';
+            if ((c & 0xf) > 9)
+            {
+                code1 = (c & 0xf) - 10 + 'A';
+            }
+            c = (c >> 4) & 0xf;
+            code0 = c + '0';
+            if (c > 9)
+            {
+                code0 = c - 10 + 'A';
+            }
+            encodedString += '%';
+            encodedString += code0;
+            encodedString += code1;
+        }
+        yield();
+    }
+    return encodedString;
 }
 
 void playAudio()
@@ -206,18 +260,38 @@ void playAudio()
     if (!playlist.isEmpty())
     {
         //There's a request on the queue, play it when the player is not playing
-        if (isPlayerBusy())
+        if (!isPlayerBusy())
         {
             uint8_t songNr = playlist.pop();
+            dfPlayer.volume(volume);
             dfPlayer.play(songNr);
+            Serial.print("Button name: ");
+            Serial.println(buttonsNames[songNr - 1]);
+            http.begin("https://maker.ifttt.com/trigger/" + String(EVENT_NAME) + "/with/key/" + KEY + "?value1=" + urlencode(buttonsNames[songNr - 1]));
+            int httpCode = http.GET();
+            if (DEBUG)
+            {
+                if (httpCode > 0)
+                { //Check for the returning code
+
+                    String payload = http.getString();
+                    Serial.println(httpCode);
+                    Serial.println(payload);
+                }
+
+                else
+                {
+                    Serial.println("Error on HTTP request");
+                }
+            }
+
+            http.end();
             delay(100);
             if (DEBUG)
             {
                 Serial.print("Playing song Nr ");
                 Serial.println(songNr);
             }
-            //keep track of when we started playing the last audio file.
-            timer = millis();
         }
     }
     else
@@ -229,10 +303,9 @@ void playAudio()
 
 void setup()
 {
-    timer = millis();
-    volume = 10;
+    volume = 20;
     //Set power parameters
-    setCpuFrequencyMhz(80);
+    //setCpuFrequencyMhz(80);
 
     if (DEBUG)
     {
@@ -267,13 +340,24 @@ void setup()
         }
     }
     if (DEBUG)
-        Serial.println(F("DFPlayer Mini is Online"));
+        Serial.println("DFPlayer Mini is Online");
     dfPlayer.volume(volume);
 
     if (DEBUG)
     {
         Serial.print("Volume set to ");
         Serial.println(volume);
+    }
+
+    AutoConnectConfig config;
+    config.autoReconnect = true;
+    portal.config(config);
+    if (portal.begin())
+    {
+        if (DEBUG)
+        {
+            Serial.println("WiFi connected: " + WiFi.localIP().toString());
+        }
     }
 
     if (DEBUG)
@@ -284,6 +368,7 @@ void setup()
 
 void loop()
 {
+    //Handle buttons
     if (!interrupted)
     {
         // just to be sure that arduino and mcp are in the "same state" regarding interrupts
@@ -300,5 +385,9 @@ void loop()
         digitalWrite(BUILTIN_LED, HIGH);
         interrupted = false;
     }
+    //Play audio
     playAudio();
+    //Handle Wifi
+    //server.handleClient();
+    portal.handleRequest();
 }
