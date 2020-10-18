@@ -182,7 +182,7 @@ void playAudio()
       int httpCode = http.GET();
 #ifdef DEBUG
       if (httpCode > 0)
-      { 
+      {
         //Check for the returning code
         String payload = http.getString();
         Serial.println(httpCode);
@@ -205,6 +205,12 @@ void playAudio()
     //When last audio is played, we can play the same one again
     lastButtonPressed = 0;
   }
+}
+
+void rootPage()
+{
+  char content[] = "Hello, world";
+  server.send(200, "text/plain", content);
 }
 
 void setup()
@@ -261,11 +267,14 @@ void setup()
 
   AutoConnectConfig config;
   config.autoReconnect = true;
+  config.hostName = "doggytalk";
   portal.config(config);
+  server.on("/", rootPage);
   if (portal.begin())
   {
 #ifdef DEBUG
     Serial.println("WiFi connected: " + WiFi.localIP().toString());
+    Serial.println("Host name: " + String(WiFi.getHostname()));
 #endif
   }
 
@@ -310,6 +319,8 @@ void loop()
     {
       lastButtonPressed = 0;
     }
-    //process the portal
   }
+  //process the portal
+  portal.handleClient();
+  portal.handleRequest();
 }
