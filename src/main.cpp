@@ -7,6 +7,8 @@ PINOUT
 21 : SDA
 22 : SCL
 23 : busy signal from DFPlayer
+
+Upload files in data folter to flash memeory using platformio run --target uploadfs
 */
 
 #include <Arduino.h>
@@ -16,6 +18,8 @@ PINOUT
 #include <WiFi.h>
 #include <WebServer.h>
 #include <AutoConnect.h>
+#include <FS.h>
+#include <SPIFFS.h>
 
 //Comment out line below for production.
 #define DEBUG true;
@@ -26,22 +30,120 @@ PINOUT
 #define SCL_PIN GPIO_NUM_22
 #define BUSY_PIN GPIO_NUM_23
 
+//Create the filesystem
+fs::SPIFFSFS &FlashFile = SPIFFS;
+
 MCP23017 mcp = MCP23017(0x20);
 bool interrupted = false;
 uint8_t a, b;
 CircularBuffer<byte, 100> playlist;
 uint8_t lastButtonPressed;
 DFRobotDFPlayerMini dfPlayer;
-RTC_DATA_ATTR uint8_t volume;
+int volume = 20;
 #define KEY "dUhzSZ0OiI4YBAEPamqC3t"
 #define EVENT_NAME "doggybutton"
 String buttonsNames[] = {
     "outside"};
 HTTPClient http;
+Preferences preferences;
 
 //WiFi objects
 WebServer server;
 AutoConnect portal(server);
+
+//supported URIs
+#define URI_ROOT "/"
+
+void getSettings()
+{
+  File settingsFile = FlashFile.open("/settings.txt", "r");
+  if (!settingsFile)
+  {
+    // File not found
+#ifdef DEBUG
+    Serial.println("Failed to open settings file");
+#endif
+    return;
+  }
+  else
+  {
+    String inputLine = "";
+    String valueString = "";
+    while (settingsFile.available())
+    {
+      inputLine = settingsFile.readString();
+      //Get volume
+      if (inputLine.startsWith("volume"))
+      {
+        valueString = inputLine.substring(inputLine.indexOf('=') + 1);
+        volume = valueString.toInt();
+      }
+    }
+    settingsFile.close();
+  }
+}
+
+void setSettings()
+{
+  File settingsFile = FlashFile.open("/settings.txt", "w");
+  if (!settingsFile)
+  {
+    // File not found
+#ifdef DEBUG
+    Serial.println("Failed to open settings file");
+#endif
+    return;
+  }
+  else
+  {
+    settingsFile.print("volume=");
+    settingsFile.println(volume);
+    settingsFile.flush();
+    settingsFile.close();
+  }
+}
+
+String volumeSelect(PageArgument &args)
+{
+  if (args.size() > 0)
+  {
+    volume = args.arg("volume").toInt();
+#ifdef DEBUG
+    Serial.printf("volume from args = %d\n",volume);
+#endif
+    setSettings();
+  }
+  String returnString;
+  returnString = "<div><label for=\"volume\" class=\"label\">Volume : </label>";
+  returnString += "<select id=\"volume\" name=\"volume\"/>";
+  for (int i = 0; i <= 30; i++)
+  {
+    returnString += "<option value=\"";
+    returnString += i;
+    returnString += "\"";
+    if (i == volume)
+    {
+      returnString += " selected ";
+    }
+    returnString += ">";
+    returnString += i;
+    returnString += "</option>";
+  }
+  returnString += "</select></div>";
+  return returnString;
+}
+
+String rootContent(PageArgument &args)
+{
+  return "<div>Content provided by function</div>";
+}
+
+PageElement ROOT_CONTENT("file:/index.htm",
+                         {{"TITLE", [](PageArgument &args) { return "DoggyTalk home"; }},
+                          {"VOLUME_INPUT", volumeSelect},
+                          {"CONTENT", rootContent}});
+
+PageBuilder ROOT_PAGE(URI_ROOT, {ROOT_CONTENT});
 
 void userInput()
 {
@@ -207,17 +309,11 @@ void playAudio()
   }
 }
 
-void rootPage()
-{
-  char content[] = "Hello, world";
-  server.send(200, "text/plain", content);
-}
 
 void setup()
 {
   //init variables
   interrupted = false;
-  volume = 30;
 
 //Set up serial port
 #ifdef DEBUG
@@ -235,6 +331,26 @@ void setup()
   //Init MCP device
   initMcp(mcp);
   attachInterrupt(digitalPinToInterrupt(INT_PIN), userInput, RISING);
+
+  //Get the portal running
+  AutoConnectConfig config;
+  config.autoReconnect = true;
+  config.hostName = "doggytalk";
+  portal.config(config);
+  ROOT_PAGE.insert(server);
+  //Mount the ISPFF file system
+  FlashFile.begin(true);
+
+  //read settings from file. This can only be run after the ISPFF file system has started
+  getSettings();
+
+  if (portal.begin())
+  {
+#ifdef DEBUG
+    Serial.println("WiFi connected: " + WiFi.localIP().toString());
+    Serial.println("Host name: " + String(WiFi.getHostname()));
+#endif
+  }
 
   //Set up the DFPlayer
   Serial2.begin(9600);
@@ -262,24 +378,8 @@ void setup()
   dfPlayer.volume(volume);
 
 #ifdef DEBUG
-  Serial.printf("Volume set to %d\n", volume);
-#endif
-
-  AutoConnectConfig config;
-  config.autoReconnect = true;
-  config.hostName = "doggytalk";
-  portal.config(config);
-  server.on("/", rootPage);
-  if (portal.begin())
-  {
-#ifdef DEBUG
-    Serial.println("WiFi connected: " + WiFi.localIP().toString());
-    Serial.println("Host name: " + String(WiFi.getHostname()));
-#endif
-  }
-
-#ifdef DEBUG
-  Serial.printf("Setup done");
+  Serial.printf("Volume = %d\n", volume);
+  Serial.printf("Setup done\n");
 #endif
 }
 
