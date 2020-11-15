@@ -109,7 +109,7 @@ String volumeSelect(PageArgument &args)
   {
     volume = args.arg("volume").toInt();
 #ifdef DEBUG
-    Serial.printf("volume from args = %d\n",volume);
+    Serial.printf("volume from args = %d\n", volume);
 #endif
     setSettings();
   }
@@ -309,6 +309,56 @@ void playAudio()
   }
 }
 
+String getContentType(String filename)
+{
+  if (server.hasArg("download"))
+    return "application/octet-stream";
+  else if (filename.endsWith(".htm"))
+    return "text/html";
+  else if (filename.endsWith(".html"))
+    return "text/html";
+  else if (filename.endsWith(".css"))
+    return "text/css";
+  else if (filename.endsWith(".js"))
+    return "application/javascript";
+  else if (filename.endsWith(".png"))
+    return "image/png";
+  else if (filename.endsWith(".gif"))
+    return "image/gif";
+  else if (filename.endsWith(".jpg"))
+    return "image/jpeg";
+  else if (filename.endsWith(".ico"))
+    return "image/x-icon";
+  else if (filename.endsWith(".xml"))
+    return "text/xml";
+  else if (filename.endsWith(".pdf"))
+    return "application/x-pdf";
+  else if (filename.endsWith(".zip"))
+    return "application/x-zip";
+  else if (filename.endsWith(".gz"))
+    return "application/x-gzip";
+  return "text/plain";
+}
+
+bool handleFileRead(String path)
+{
+  Serial.println("handleFileRead: " + path);
+  if (path.endsWith("/"))
+    path += "index.htm";
+  String contentType = getContentType(path);
+  String pathWithGz = path + ".gz";
+  if (SPIFFS.exists(pathWithGz) || SPIFFS.exists(path))
+  {
+    if (SPIFFS.exists(pathWithGz))
+      path += ".gz";
+    File file = SPIFFS.open(path, "r");
+    size_t sent = server.streamFile(file, contentType);
+    Serial.printf("%d bytes sent to client\n", sent);
+    file.close();
+    return true;
+  }
+  return false;
+}
 
 void setup()
 {
@@ -336,10 +386,15 @@ void setup()
   AutoConnectConfig config;
   config.autoReconnect = true;
   config.hostName = "doggytalk";
+  server.on("/favicon.ico", HTTP_GET, []() {
+    if (!handleFileRead("/favicon.ico"))
+      server.send(404, "text/plain", "FileNotFound");
+  });
   portal.config(config);
   ROOT_PAGE.insert(server);
   //Mount the ISPFF file system
   FlashFile.begin(true);
+  File fiviconFile = FlashFile.open("/favicon.char", "r");
 
   //read settings from file. This can only be run after the ISPFF file system has started
   getSettings();
@@ -423,4 +478,5 @@ void loop()
   //process the portal
   portal.handleClient();
   portal.handleRequest();
+  server.handleClient();
 }
