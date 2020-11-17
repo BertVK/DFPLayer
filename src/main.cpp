@@ -390,11 +390,14 @@ void setup()
     if (!handleFileRead("/favicon.ico"))
       server.send(404, "text/plain", "FileNotFound");
   });
+  server.on("/style.css", HTTP_GET, []() {
+    if (handleFileRead("/style.css"))
+      server.send(404, "text/plain", "FileNotFound");
+  });
   portal.config(config);
   ROOT_PAGE.insert(server);
   //Mount the ISPFF file system
   FlashFile.begin(true);
-  File fiviconFile = FlashFile.open("/favicon.char", "r");
 
   //read settings from file. This can only be run after the ISPFF file system has started
   getSettings();
