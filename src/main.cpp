@@ -42,7 +42,7 @@ DFRobotDFPlayerMini dfPlayer;
 int volume = 20;
 #define KEY "dUhzSZ0OiI4YBAEPamqC3t"
 #define EVENT_NAME "doggybutton"
-String buttonsNames[] = {
+String buttonsNames[1] = {
     "outside"};
 HTTPClient http;
 Preferences preferences;
@@ -133,9 +133,23 @@ String volumeSelect(PageArgument &args)
   return returnString;
 }
 
+String buttonList()
+{
+  String output;
+  Serial.printf("ButtonsNames size = %d\n", sizeof(buttonsNames));
+  for (int i = 0; i <= sizeof(buttonsNames); i++)
+  {
+    output += "<div>button name = ";
+    output += i;
+//    output += buttonsNames[i];
+    output += "</div>";
+  }
+  return output;
+}
+
 String rootContent(PageArgument &args)
 {
-  return "<div>Content provided by function</div>";
+  return "<div></div>";
 }
 
 PageElement ROOT_CONTENT("file:/index.htm",
@@ -386,6 +400,10 @@ void setup()
   AutoConnectConfig config;
   config.autoReconnect = true;
   config.hostName = "doggytalk";
+  portal.config(config);
+  ROOT_PAGE.insert(server);
+  //Mount the ISPFF file system
+  FlashFile.begin(true);
   server.on("/favicon.ico", HTTP_GET, []() {
     if (!handleFileRead("/favicon.ico"))
       server.send(404, "text/plain", "FileNotFound");
@@ -394,10 +412,6 @@ void setup()
     if (handleFileRead("/style.css"))
       server.send(404, "text/plain", "FileNotFound");
   });
-  portal.config(config);
-  ROOT_PAGE.insert(server);
-  //Mount the ISPFF file system
-  FlashFile.begin(true);
 
   //read settings from file. This can only be run after the ISPFF file system has started
   getSettings();
@@ -433,12 +447,12 @@ void setup()
 #ifdef DEBUG
   Serial.println("DFPlayer Mini is Online");
 #endif
-  dfPlayer.volume(volume);
 
 #ifdef DEBUG
-  Serial.printf("Volume = %d\n", volume);
   Serial.printf("Setup done\n");
 #endif
+
+  Serial.println(buttonList());
 }
 
 void loop()
