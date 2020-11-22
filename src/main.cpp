@@ -20,6 +20,7 @@ Upload files in data folter to flash memeory using platformio run --target uploa
 #include <AutoConnect.h>
 #include <FS.h>
 #include <SPIFFS.h>
+#include <SimpleMap.h>
 
 //Comment out line below for production.
 #define DEBUG true;
@@ -42,17 +43,40 @@ DFRobotDFPlayerMini dfPlayer;
 int volume = 20;
 #define KEY "dUhzSZ0OiI4YBAEPamqC3t"
 #define EVENT_NAME "doggybutton"
-String buttonsNames[1] = {
-    "outside"};
-HTTPClient http;
-Preferences preferences;
+struct button
+{
+  String name;
+  boolean notify;
+  int random;
+};
+typedef struct button Button;
+SimpleMap<String, Button> *buttonMap = new SimpleMap<String, Button>([](String &a, String &b) -> int {
+  if (a == b)
+    return 0; // a and b are equal
+  else if (a > b)
+    return 1; // a is bigger than b
+  else
+    return -1; // a is smaller than b
+});
 
 //WiFi objects
+HTTPClient http;
+Preferences preferences;
 WebServer server;
 AutoConnect portal(server);
 
 //supported URIs
 #define URI_ROOT "/"
+
+String addPadding(int i)
+{
+  String output = String(i);
+  for (int i = output.length(); i < 3; i++)
+  {
+    output = "0" + output;
+  }
+  return output;
+}
 
 void getSettings()
 {
@@ -69,17 +93,44 @@ void getSettings()
   {
     String inputLine = "";
     String valueString = "";
+#ifdef DEBUG
+    Serial.println("Settings file content");
+    Serial.println("=====================");
+#endif
+    int line = 1;
     while (settingsFile.available())
     {
-      inputLine = settingsFile.readString();
+      inputLine = settingsFile.readStringUntil('\n');
+#ifdef DEBUG
+      Serial.print("line ");
+      Serial.print(line);
+      Serial.print(" : ");
+      Serial.println(inputLine);
+#endif
       //Get volume
       if (inputLine.startsWith("volume"))
       {
         valueString = inputLine.substring(inputLine.indexOf('=') + 1);
         volume = valueString.toInt();
+        // Serial.print("Set volume to ");
+        // Serial.println(volume);
       }
+      //Get button(s)
+      if (inputLine.startsWith("button"))
+      {
+        Button thisButton;
+        thisButton.name = inputLine.substring(10, inputLine.indexOf("|"));
+        thisButton.notify = inputLine.substring(inputLine.length() - 4, inputLine.length() - 3) == "0" ? false : true;
+        thisButton.random = inputLine.substring(inputLine.length() - 2, inputLine.length() - 1).toInt();
+        buttonMap->put(inputLine.substring(6, 9), thisButton);
+      }
+      line++;
     }
     settingsFile.close();
+#ifdef DEBUG
+    Serial.println("=====================");
+    Serial.println("End of settings file");
+#endif
   }
 }
 
@@ -98,6 +149,26 @@ void setSettings()
   {
     settingsFile.print("volume=");
     settingsFile.println(volume);
+
+    for (int i = 0; i < buttonMap->size(); i++)
+    {
+      String key = buttonMap->getKey(i);
+      Button thisButton = buttonMap->get(key);
+      String thisLine = "button";
+      thisLine += key;
+      thisLine += "=";
+      thisLine += thisButton.name;
+      thisLine += "|";
+      thisLine += thisButton.notify ? "1" : "0";
+      thisLine += "|";
+      thisLine += thisButton.random;
+#ifdef DEBUG
+      Serial.print("settings button line = ");
+      Serial.println(thisLine);
+#endif
+      settingsFile.println(thisLine);
+    }
+
     settingsFile.flush();
     settingsFile.close();
   }
@@ -136,12 +207,10 @@ String volumeSelect(PageArgument &args)
 String buttonList()
 {
   String output;
-  Serial.printf("ButtonsNames size = %d\n", sizeof(buttonsNames));
-  for (int i = 0; i <= sizeof(buttonsNames); i++)
+  for (int i = 1; i <= buttonMap->size(); i++)
   {
     output += "<div>button name = ";
-    output += i;
-//    output += buttonsNames[i];
+    output += buttonMap->get(addPadding(i)).name;
     output += "</div>";
   }
   return output;
@@ -292,21 +361,25 @@ void playAudio()
       dfPlayer.play(songNr);
 #ifdef DEBUG
       Serial.print("Button name: ");
-      Serial.println(buttonsNames[songNr - 1]);
+      Serial.println(buttonMap->get(addPadding(songNr)).name);
 #endif
-      http.begin("https://maker.ifttt.com/trigger/" + String(EVENT_NAME) + "/with/key/" + KEY + "?value1=" + urlencode(buttonsNames[songNr - 1]));
-      int httpCode = http.GET();
+      Button thisButton = buttonMap->get(addPadding(songNr));
+      if (thisButton.notify)
+      {
+        http.begin("https://maker.ifttt.com/trigger/" + String(EVENT_NAME) + "/with/key/" + KEY + "?value1=" + urlencode(thisButton.name));
+        int httpCode = http.GET();
 #ifdef DEBUG
-      if (httpCode > 0)
-      {
-        //Check for the returning code
-        String payload = http.getString();
-        Serial.println(httpCode);
-        Serial.println(payload);
-      }
-      else
-      {
-        Serial.println("Error on HTTP request");
+        if (httpCode > 0)
+        {
+          //Check for the returning code
+          String payload = http.getString();
+          Serial.println(httpCode);
+          Serial.println(payload);
+        }
+        else
+        {
+          Serial.println("Error on HTTP request");
+        }
       }
 #endif
       http.end();
@@ -451,8 +524,6 @@ void setup()
 #ifdef DEBUG
   Serial.printf("Setup done\n");
 #endif
-
-  Serial.println(buttonList());
 }
 
 void loop()
